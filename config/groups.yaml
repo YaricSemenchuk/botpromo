@@ -2,9 +2,19 @@
 # chat: username ("@aso_chat_ru") или числовой chat id (для приватных групп/супергрупп, напр. "-1001234567890")
 # name: человекочитаемое имя — уходит в meta.group, сейлу важно видеть откуда лид
 #
-# Реальный список — от Андрея. Ниже пример структуры для теста на 2-3 группах старта.
+# Список от Андрея (2026-07-27).
 
-# - chat: "@aso_chat_ru"
-#   name: "ASO Chat RU"
-# - chat: "-1001234567890"
-#   name: "ASO Talks"
+- chat: "@MobilePirat"
+  name: "MobilePirat"
+- chat: "@chatmobilemakers"
+  name: "Chat Mobile Makers"
+- chat: "@pro_motiv8"
+  name: "Pro Motiv8"
+- chat: "@asoprivet"
+  name: "ASO Privet"
+- chat: "@asoclub"
+  name: "ASO Club"
+- chat: "@user_acquisition"
+  name: "User Acquisition"
+- chat: "@appledeveloperchat"
+  name: "Apple Developer Chat"
