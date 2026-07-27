@@ -7,21 +7,6 @@ ClassifyAction = Literal["catch", "discard"]
 
 
 @dataclass(frozen=True)
-class IncomingMessage:
-    chat_id: int
-    message_id: int
-    chat_name: str
-    text: str
-    sender_name: str
-    sender_username: Optional[str]
-    link: str
-
-    @property
-    def external_id(self) -> str:
-        return f"tg:{self.chat_id}:{self.message_id}"
-
-
-@dataclass(frozen=True)
 class ClassificationResult:
     action: ClassifyAction
     tag: Optional[str] = None  # "diy" | "borderline" | None
