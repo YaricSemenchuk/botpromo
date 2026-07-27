@@ -63,3 +63,36 @@ def test_checkpoint_never_moves_backward(tmp_path):
 
     _call(store, 3, "Всем привет")  # an older message arriving out of order
     assert store.get_checkpoint(1) == 5
+
+
+def test_on_lead_fires_only_for_caught_messages(tmp_path):
+    # Через этот колбэк отправщик просыпается досрочно: пойманный лид уходит в
+    # CRM сразу, а не ждёт следующего тика. На отброшенных будить нечего.
+    store = Store(tmp_path / "test.db")
+    calls = []
+
+    process_message(
+        store,
+        chat_id=1,
+        message_id=1,
+        chat_name="ASO Chat RU",
+        text="Есть тут те кто ASO могут сделать платно, отпишите в лс",
+        sender_name="Ivan",
+        sender_username="ivanp",
+        link="https://t.me/c/1/1",
+        on_lead=lambda: calls.append("woken"),
+    )
+    assert calls == ["woken"]
+
+    process_message(
+        store,
+        chat_id=1,
+        message_id=2,
+        chat_name="ASO Chat RU",
+        text="Всем привет, как дела?",
+        sender_name="Ivan",
+        sender_username="ivanp",
+        link="https://t.me/c/1/2",
+        on_lead=lambda: calls.append("woken"),
+    )
+    assert calls == ["woken"]

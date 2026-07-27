@@ -67,20 +67,36 @@ class OutboxProcessor:
         self._poll_interval = poll_interval
         self._client = client or httpx.AsyncClient()
         self._stopped = asyncio.Event()
+        # Взводится и при новом лиде, и при остановке: цикл ниже просыпается на
+        # любое из двух событий и уже сам разбирается, что произошло.
+        self._wake = asyncio.Event()
 
     async def close(self) -> None:
         await self._client.aclose()
 
     def stop(self) -> None:
         self._stopped.set()
+        self._wake.set()
+
+    def notify(self) -> None:
+        """Лид пойман — отправить сейчас, не дожидаясь конца интервала.
+
+        Зовётся из обработчика сообщений Telethon, то есть из того же event
+        loop. Если цикл в этот момент занят отправкой, флаг просто останется
+        взведённым и следующая итерация начнётся без паузы.
+        """
+        self._wake.set()
 
     async def run_forever(self) -> None:
         while not self._stopped.is_set():
             await self.drain_once()
+            # Интервал остаётся страховкой: по нему подбираются отложенные
+            # ретраи и всё, что могло осесть в очереди мимо notify().
             try:
-                await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                await asyncio.wait_for(self._wake.wait(), timeout=self._poll_interval)
             except asyncio.TimeoutError:
                 pass
+            self._wake.clear()
 
     async def drain_once(self) -> None:
         for item in self._store.ready_outbox_items():

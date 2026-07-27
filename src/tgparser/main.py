@@ -25,9 +25,11 @@ async def main() -> None:
     outbox = OutboxProcessor(settings, store, alerter=alerter)
 
     try:
+        # on_lead будит отправщик: пойманный лид уходит в CRM сразу, а не ждёт
+        # следующего тика его интервала.
         await asyncio.gather(
             outbox.run_forever(),
-            telegram_client.run(settings, store),
+            telegram_client.run(settings, store, on_lead=outbox.notify),
         )
     finally:
         await outbox.close()
