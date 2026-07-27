@@ -82,3 +82,15 @@ def test_seller_pitch_with_strong_buyer_intent_is_borderline():
 
 def test_empty_text_is_discarded():
     assert classify("").action == "discard"
+
+
+# Домен из ТЗ явно называет репутацию и конкурентный анализ темами улова,
+# отдельно от общих ASO-слов — регрессия на пробел, найденный при аудите.
+def test_reputation_management_request_is_caught():
+    result = classify("Посоветуйте кто занимается работой с репутацией в сторах, платно")
+    assert result.action == "catch"
+
+
+def test_competitive_analysis_request_is_caught():
+    result = classify("У кого можно заказать конкурентный анализ приложения конкурента?")
+    assert result.action == "catch"
