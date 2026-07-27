@@ -17,6 +17,12 @@ DEFAULT_CRM_ENDPOINT = "https://pm-crm-production.up.railway.app/api/inbound/lea
 
 def _env(name: str, default: str | None = None, required: bool = False) -> str | None:
     value = os.environ.get(name, default)
+    if value is not None:
+        # Dashboard-pasted secrets routinely pick up a trailing newline/space
+        # (e.g. copying a printed line including its line terminator) — a
+        # stray char is invisible but breaks exact-length-sensitive parsing
+        # like Telethon's StringSession. Strip defensively for every var.
+        value = value.strip()
     if required and not value:
         raise RuntimeError(f"Missing required env var: {name}")
     return value
