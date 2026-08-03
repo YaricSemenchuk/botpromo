@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from ..models import ClassificationResult
+from ..models import ClassificationResult, MessageMeta
 from .rules import (
     BARTER_BORDERLINE_MARKERS,
     DIY_META_MARKERS,
@@ -52,10 +52,15 @@ def _matches(patterns: list[re.Pattern], text: str) -> tuple:
     return tuple(m.group(0) for p in patterns if (m := p.search(text)))
 
 
-def classify(text: str) -> ClassificationResult:
+def classify(text: str, meta: MessageMeta | None = None) -> ClassificationResult:
     """Rule-based classifier: THEMATIC WORD + INTENT MARKER in one message.
 
     Decision order (see plan doc for rationale of each step):
+    -1. broadcast (channel post, repost, sent via a bot) -> discard, tag=post.
+        This one is about the medium, not the content, so it comes first: the
+        text of an announcement is indistinguishable from a request, and there
+        is nobody in the chat to reply to. The tag is kept so the reason stays
+        visible in the processed log while tuning.
     0. job seeker -> discard: someone offering their own labour is not a buyer
     1. buying something that isn't our service (dev accounts, ready-made apps,
        crypto, payout services) -> discard: intent is real, subject is not ours
@@ -83,6 +88,9 @@ def classify(text: str) -> ClassificationResult:
     test_our_role_vocabulary_is_covered_by_thematic_vocabulary), so no real
     vacancy is lost by gating on the topic first.
     """
+    if meta is not None and meta.is_broadcast:
+        return ClassificationResult(action="discard", tag="post")
+
     normalized = _normalize(text)
 
     if _matches(_SEEKER, normalized) or _matches(_JOB_BOARD, normalized):

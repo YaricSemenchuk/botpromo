@@ -84,10 +84,10 @@ python -m tgparser.main
 ```
 src/tgparser/
   config.py           # env + config/groups.yaml
-  models.py            # IncomingMessage / ClassificationResult / LeadPayload
+  models.py            # MessageMeta / ClassificationResult / LeadPayload
   classifier/
     rules.py           # тематические слова / маркеры намерения / стоп-листы — сюда лезть при подкрутке
-    engine.py           # classify(text) -> ClassificationResult
+    engine.py           # classify(text, meta) -> ClassificationResult
   store.py              # SQLite: идемпотентность, outbox, чекпоинты
   sender.py              # POST в CRM, retry/backoff, DRY_RUN
   alerts.py               # Telegram-бот для алертов на 401/422/исчерпанные ретраи
