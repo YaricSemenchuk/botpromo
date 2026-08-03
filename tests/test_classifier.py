@@ -307,7 +307,127 @@ def test_live_thread_replies_are_discarded(text):
     assert classify(text).action == "discard"
 
 
+# ============================================================================
+# Услуги, которые мы продаём, но которых не было в тематическом словаре.
+# ASA/UA лежали только в OUR_ROLE_PATTERNS (и потому работали исключительно в
+# ветке вакансий), а подуслуги ASO — только в _NEED_OBJECT: движок отбрасывает
+# сообщение без тематики раньше, чем смотрит на намерение, так что заявка
+# «ищу подрядчика по Apple Search Ads» не доживала до маркеров.
+# ============================================================================
+
+SERVICE_REQUESTS = [
+    # ASA / Apple Search Ads
+    "ищу подрядчика по Apple Search Ads",
+    "нужен подрядчик на ASA, бюджет есть",
+    "кто ведёт эпл серч адс? платно",
+    "кто делает CPP и A/B тесты? платно",
+    # UA / закупка трафика
+    "нужен человек на ua-закупку, бюджет есть",
+    "у кого можно закупить трафик на прилу?",
+    # ASO обиходно
+    "ребят, нужен асошник для нашей прилы, платно",
+    "нужен АСО-шник на постоянку, платно",
+    # подуслуги ASO
+    "кто может собрать семантическое ядро? платно",
+    "нужна локализация листинга, платно",
+    "посоветуйте подрядчика по метаданным",
+    "ищу подрядчика по конверсии в сторе",
+    "кто занимается фичерингом? готов оплатить",
+    # кириллические написания сторов
+    "нужен спец по органике в аппсторе",
+    "сколько стоит вывод в выдаче гугл плей?",
+]
+
+
+@pytest.mark.parametrize("text", SERVICE_REQUESTS)
+def test_requests_for_every_service_we_sell_are_caught(text):
+    assert classify(text).action == "catch"
+
+
+# Список от владельца (03.08.2026): слова, по которым улов обязан работать.
+OWNER_KEYWORD_REQUESTS = [
+    "куплю мотив на андроид",
+    "где закупить мотивированый трафик?",
+    "нужны мотив боты для позиций",
+    "нужен ASO под гембл",
+    "посоветуйте подрядчика по АСО",
+    "ищу подрядчика на продвижение приложения",
+    "сколько стоит буст апки?",
+    "кто может забустить аппку? платно",
+    "ищу подрядчика по app ads",
+]
+
+
+@pytest.mark.parametrize("text", OWNER_KEYWORD_REQUESTS)
+def test_owner_keyword_list_is_caught(text):
+    assert classify(text).action == "catch"
+
+
+def test_apk_file_is_not_an_app_promotion_topic():
+    # «апка» — приложение, «апк» — файл сборки. Второе к продвижению не относится.
+    from tgparser.classifier.engine import _matches, _THEMATIC
+
+    assert not _matches(_THEMATIC, "скинь апк файл на тест")
+
+
+def test_our_role_vocabulary_is_covered_by_thematic_vocabulary():
+    # Инвариант: всё, что мы считаем «нашей ролью» в вакансии, обязано быть и
+    # темой. Иначе заявка на ту же работу вне ветки вакансий отбрасывается.
+    from tgparser.classifier.engine import _matches, _THEMATIC
+
+    for sample in ["ASO", "ASA", "Apple Search Ads", "app store optimization",
+                   "user acquisition", "UA-менеджер", "продвижение приложения", "мотив"]:
+        assert _matches(_THEMATIC, sample), f"нет тематического слова для {sample!r}"
+
+
 def test_paid_offer_overrules_peer_question_veto():
     # Тот же по форме вопрос к чату, но с деньгами на столе — это уже заявка.
     text = "Кто сталкивался с просадкой позиций? Готов оплатить консультацию по ASO"
+    assert classify(text).action == "catch"
+
+
+# ============================================================================
+# Порядок каскада. Все три случая ниже — заявки, которые терялись не из-за
+# словаря, а из-за того, какая проверка срабатывала первой.
+# ============================================================================
+
+# «Ищу специалиста/дизайнера/менеджера» — самая частая форма заявки, и она же
+# раньше уводила сообщение в ветку вакансий, где всё без нашей роли отбрасывалось.
+REQUESTS_PHRASED_LIKE_HIRING = [
+    "ищу дизайнера для скриншотов в стор",
+    "нужен дизайнер для АСО под гугл/ios",
+    "ищу специалиста по локализации листинга, платно",
+    "ищу специалиста по Apple Search Ads",
+    "Ищу специалиста, который поднимет позиции по ключам. Бюджет есть",
+]
+
+
+@pytest.mark.parametrize("text", REQUESTS_PHRASED_LIKE_HIRING)
+def test_requests_worded_like_a_vacancy_are_still_caught(text):
+    assert classify(text).action == "catch"
+
+
+def test_vacancy_asking_to_send_a_resume_is_not_a_job_seeker():
+    # Проверка соискателя стоит первой в каскаде, а вакансия почти всегда
+    # просит прислать резюме — на голом «резюме» отсеивались именно те
+    # вакансии, ради которых ветку и разворачивали.
+    result = classify("Вакансия: ASO-менеджер в команду. Зарплата от 2000$. Резюме в лс")
+    assert result.action == "catch"
+    assert result.tag == "vacancy"
+
+
+def test_job_seeker_with_own_resume_is_still_discarded():
+    assert classify("Рассматриваю предложения по ASO, моё резюме прикрепляю").action == "discard"
+
+
+REQUESTS_STARTING_AS_A_COMPLAINT = [
+    # Жалоба + заявка в одном сообщении: peer-вето снимается не только деньгами.
+    "не работает продвижение, ищу подрядчика по ASO",
+    "у меня не обновляется рейтинг в сторе, ищу специалиста платно",
+    "у кого ещё не растут позиции? Куплю установки по ключам",
+]
+
+
+@pytest.mark.parametrize("text", REQUESTS_STARTING_AS_A_COMPLAINT)
+def test_request_overrules_peer_question_veto(text):
     assert classify(text).action == "catch"

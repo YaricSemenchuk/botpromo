@@ -15,6 +15,7 @@ from .rules import (
     OUR_ROLE_PATTERNS,
     PEER_QUESTION_MARKERS,
     PURCHASE_SIGNAL_MARKERS,
+    REQUEST_INTENT_MARKERS,
     SELLER_NEGATIVE_MARKERS,
     STRONG_INTENT_MARKERS,
     THEMATIC_PATTERNS,
@@ -40,6 +41,7 @@ _BARTER = _compile(BARTER_BORDERLINE_MARKERS)
 _NON_ASO = _compile(NON_ASO_PURCHASE_MARKERS)
 _PEER = _compile(PEER_QUESTION_MARKERS)
 _PURCHASE = _compile(PURCHASE_SIGNAL_MARKERS)
+_REQUEST = _compile(REQUEST_INTENT_MARKERS)
 
 
 def _normalize(text: str) -> str:
@@ -55,16 +57,17 @@ def classify(text: str) -> ClassificationResult:
 
     Decision order (see plan doc for rationale of each step):
     0. job seeker -> discard: someone offering their own labour is not a buyer
-    1. company hiring -> catch with tag=vacancy IF the role is ours (ASO/ASA/UA):
+    1. buying something that isn't our service (dev accounts, ready-made apps,
+       crypto, payout services) -> discard: intent is real, subject is not ours
+    2. no thematic word -> discard (off-topic)
+    3. company hiring -> catch with tag=vacancy IF the role is ours (ASO/ASA/UA):
        that company needs exactly the work we sell and can outsource it instead
        of staffing it. Hiring for anything else -> discard.
-    2. buying something that isn't our service (dev accounts, ready-made apps,
-       crypto, payout services) -> discard: intent is real, subject is not ours
-    3. no thematic word -> discard (off-topic)
     4. diy question ("как лучше указывать ключевые слова") -> catch, tag=diy
     5. question to fellow chat members ("кто как качает ключи", "у кого не
-       обновляется статистика") -> discard, UNLESS money is on the table:
-       "платно/куплю/бюджет" turns the same question into a request
+       обновляется статистика") -> discard, UNLESS money is on the table or a
+       performer is being sought: "платно/куплю/бюджет/ищу подрядчика" turns
+       the same question into a request
     6. seller pitch (1st person "делаю/предоставляем") without STRONG buyer
        intent -> discard. A lone "пишите в лс" doesn't count here — sellers
        use that same CTA constantly, so it must not overrule the seller flag.
@@ -72,10 +75,24 @@ def classify(text: str) -> ClassificationResult:
     8. barter/giveaway markers -> catch, tag=borderline
     9. thematic + (strong intent or DM-contact) -> catch, no tag
     10. thematic only, nothing else -> discard
+
+    Hiring sits AFTER the thematic gate on purpose: it is the only branch that
+    can discard on its own, and it used to run first, so a request phrased as
+    "ищу дизайнера для скриншотов" was read as a vacancy for someone else's
+    role and dropped. Every role we sell is also a thematic word (enforced by
+    test_our_role_vocabulary_is_covered_by_thematic_vocabulary), so no real
+    vacancy is lost by gating on the topic first.
     """
     normalized = _normalize(text)
 
     if _matches(_SEEKER, normalized) or _matches(_JOB_BOARD, normalized):
+        return ClassificationResult(action="discard")
+
+    if _matches(_NON_ASO, normalized):
+        return ClassificationResult(action="discard")
+
+    thematic_hits = _matches(_THEMATIC, normalized)
+    if not thematic_hits:
         return ClassificationResult(action="discard")
 
     hiring_hits = _matches(_HIRING, normalized)
@@ -87,20 +104,15 @@ def classify(text: str) -> ClassificationResult:
             )
         return ClassificationResult(action="discard")
 
-    if _matches(_NON_ASO, normalized):
-        return ClassificationResult(action="discard")
-
-    thematic_hits = _matches(_THEMATIC, normalized)
-    if not thematic_hits:
-        return ClassificationResult(action="discard")
-
     diy_hits = _matches(_DIY, normalized)
     if diy_hits:
         return ClassificationResult(
             action="catch", tag="diy", matched_thematic=thematic_hits, matched_intent=diy_hits
         )
 
-    if _matches(_PEER, normalized) and not _matches(_PURCHASE, normalized):
+    if _matches(_PEER, normalized) and not (
+        _matches(_PURCHASE, normalized) or _matches(_REQUEST, normalized)
+    ):
         return ClassificationResult(action="discard")
 
     strong_intent_hits = _matches(_STRONG_INTENT, normalized)
