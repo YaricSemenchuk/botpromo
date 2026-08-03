@@ -1,6 +1,7 @@
 import pytest
 
 from tgparser.classifier import classify
+from tgparser.models import MessageMeta
 
 # Эталонные примеры улова — дословно из стартового пакета.
 CATCH_EXAMPLES = [
@@ -9,7 +10,15 @@ CATCH_EXAMPLES = [
     "Если тут есть у кого свой сервис или предоставляет услуги, то напишете в лс",
     "кто-нибудь знает, кто обеспечивает хорошие установки ключевых слов?",
     "у кого можно купить мотивированные инсталлы или ботов для движения позиций Ipad?",
+]
+
+# Пример из стартового пакета, снятый с улова 03.08.2026 по решению владельца.
+# Формально он проходил формулу «тематика + намерение», но по сути это оффер:
+# человек ПРЕДЛАГАЕТ своё приложение, а не ищет услугу. Спрос тут не наш, и
+# вместе с ним в улов шёл весь класс постов-предложений с CTA «пишите в лс».
+OFFER_EXAMPLES = [
     "Есть прилка в сторе Aviator. Кому интересно, пишите.",
+    "Есть трафик на мобильные приложения, кому интересно — пишите в лс",
 ]
 
 DIY_EXAMPLE = (
@@ -53,6 +62,11 @@ def test_seller_pitches_are_discarded(text):
     assert result.action == "discard"
 
 
+@pytest.mark.parametrize("text", OFFER_EXAMPLES)
+def test_offers_are_discarded(text):
+    assert classify(text).action == "discard"
+
+
 def test_vacancy_for_our_role_is_caught():
     # Разворот требования из стартового пакета (там вакансии были мусором).
     # Решение владельца от 27.07.2026: компания, которая нанимает ASO-щика,
@@ -87,6 +101,37 @@ def test_seller_pitch_with_strong_buyer_intent_is_borderline():
 
 def test_empty_text_is_discarded():
     assert classify("").action == "discard"
+
+
+# ============================================================================
+# Пост vs сообщение. Текст объявления неотличим от текста заявки, поэтому
+# решает не он, а формат: у поста канала, репоста и сообщения через бота
+# автора в чате нет — писать по такому «лиду» некому.
+# ============================================================================
+
+BROADCAST_META = [
+    MessageMeta(is_post=True),
+    MessageMeta(forwarded=True),
+    MessageMeta(via_bot=True),
+    MessageMeta(sender_is_channel=True),
+]
+
+
+@pytest.mark.parametrize("meta", BROADCAST_META)
+def test_broadcast_is_discarded_even_with_perfect_lead_text(meta):
+    # Текст — эталонная заявка: без признаков формата это гарантированный улов.
+    text = "Ищу подрядчика по ASO для нашего приложения, бюджет есть"
+    assert classify(text).action == "catch"
+
+    result = classify(text, meta)
+    assert result.action == "discard"
+    # Причина остаётся в логе обработанных — по ней и тюнить.
+    assert result.tag == "post"
+
+
+def test_message_from_a_person_is_unaffected_by_meta():
+    text = "Ищу подрядчика по ASO для нашего приложения, бюджет есть"
+    assert classify(text, MessageMeta()).action == "catch"
 
 
 # Домен из ТЗ явно называет репутацию и конкурентный анализ темами улова,

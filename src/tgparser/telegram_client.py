@@ -25,7 +25,7 @@ from telethon.sessions import StringSession
 
 from .classifier import classify
 from .config import Group, Settings
-from .models import LeadPayload
+from .models import LeadPayload, MessageMeta
 from .store import Store
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,22 @@ def _message_link(chat_id: int, message_id: int, chat_username: Optional[str]) -
         return f"https://t.me/{chat_username}/{message_id}"
     real_id, _ = tl_utils.resolve_id(chat_id)
     return f"https://t.me/c/{real_id}/{message_id}"
+
+
+def _message_meta(message, sender) -> MessageMeta:
+    """Собирает признаки формата из объекта Telethon.
+
+    Всё это доступно на входе и раньше выбрасывалось: в classify() уходил
+    только текст, поэтому объявление канала выглядело для него точно так же,
+    как заявка человека.
+    """
+    return MessageMeta(
+        is_post=bool(getattr(message, "post", False)),
+        forwarded=getattr(message, "fwd_from", None) is not None,
+        via_bot=getattr(message, "via_bot_id", None) is not None,
+        # У канала нет username — писать такому «лиду» некуда.
+        sender_is_channel=sender is not None and not hasattr(sender, "first_name"),
+    )
 
 
 def _sender_display(sender) -> tuple[str, Optional[str]]:
@@ -70,6 +86,7 @@ def process_message(
     sender_name: str,
     sender_username: Optional[str],
     link: str,
+    meta: Optional[MessageMeta] = None,
     on_lead: Optional[Callable[[], None]] = None,
 ) -> None:
     """Idempotent per (chat_id, message_id): classify, log, enqueue for
@@ -84,7 +101,7 @@ def process_message(
     if store.is_processed(external_id):
         return
 
-    result = classify(text or "")
+    result = classify(text or "", meta)
     store.record_processed(external_id, chat_id, message_id, result.action, result.tag)
 
     if result.action == "catch":
@@ -138,6 +155,7 @@ async def _catch_up(
             sender_name=name,
             sender_username=username,
             link=link,
+            meta=_message_meta(message, sender),
             on_lead=on_lead,
         )
 
@@ -221,6 +239,7 @@ async def run(settings: Settings, store: Store, on_lead: Optional[Callable[[], N
             sender_name=name,
             sender_username=username,
             link=link,
+            meta=_message_meta(event.message, sender),
             on_lead=on_lead,
         )
 

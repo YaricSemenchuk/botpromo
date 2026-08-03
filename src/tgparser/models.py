@@ -7,6 +7,31 @@ ClassifyAction = Literal["catch", "discard"]
 
 
 @dataclass(frozen=True)
+class MessageMeta:
+    """Признаки формата сообщения — то, чего не видно в тексте.
+
+    Классификатор работал на голом тексте и потому не мог отличить объявление
+    от реплики: «Вакансия… Резюме в лс» и «ищу подрядчика» приходили к нему
+    одинаковыми строками. Здесь ровно те признаки, которые Telegram сообщает
+    однозначно; каждый из них означает одно и то же — автора текста в чате нет
+    и написать ему нельзя.
+
+    Длину и разметку («Требования:», «Условия:») сюда намеренно не берём:
+    единственные длинные структурированные сообщения в нашем трафике — это
+    вакансии, а их владелец ловить просил (решение от 27.07.2026).
+    """
+
+    is_post: bool = False           # пост канала, а не сообщение человека
+    forwarded: bool = False         # репост чужого текста
+    via_bot: bool = False           # отправлено через инлайн-бота
+    sender_is_channel: bool = False  # написано от имени канала, username нет
+
+    @property
+    def is_broadcast(self) -> bool:
+        return self.is_post or self.forwarded or self.via_bot or self.sender_is_channel
+
+
+@dataclass(frozen=True)
 class ClassificationResult:
     action: ClassifyAction
     tag: Optional[str] = None  # "diy" | "borderline" | None

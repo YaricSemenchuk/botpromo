@@ -1,8 +1,9 @@
+from tgparser.models import MessageMeta
 from tgparser.store import Store
-from tgparser.telegram_client import process_message
+from tgparser.telegram_client import _message_meta, process_message
 
 
-def _call(store, message_id, text, chat_id=1, chat_name="ASO Chat RU", sender_name="Ivan", sender_username="ivanp", link="https://t.me/c/1/1"):
+def _call(store, message_id, text, chat_id=1, chat_name="ASO Chat RU", sender_name="Ivan", sender_username="ivanp", link="https://t.me/c/1/1", meta=None):
     process_message(
         store,
         chat_id=chat_id,
@@ -12,6 +13,7 @@ def _call(store, message_id, text, chat_id=1, chat_name="ASO Chat RU", sender_na
         sender_name=sender_name,
         sender_username=sender_username,
         link=link,
+        meta=meta,
     )
 
 
@@ -44,6 +46,43 @@ def test_discard_does_not_enqueue(tmp_path):
 
     assert store.ready_outbox_items() == []
     assert store.is_processed("tg:1:1")
+
+
+def test_broadcast_is_not_enqueued(tmp_path):
+    # Тот же текст, что и в test_catch_enqueues_lead_payload, но постом канала:
+    # в CRM он не уходит, а в лог обработанных попадает — чтобы было видно, что
+    # именно отсеялось и по какой причине.
+    store = Store(tmp_path / "test.db")
+    _call(store, 1, "Есть тут те кто ASO могут сделать платно, отпишите в лс",
+          meta=MessageMeta(is_post=True))
+
+    assert store.ready_outbox_items() == []
+    assert store.is_processed("tg:1:1")
+
+
+class _FakeUser:
+    first_name = "Ivan"
+
+
+class _FakeChannel:
+    title = "ASO Digest"
+
+
+class _FakeMessage:
+    def __init__(self, post=False, fwd_from=None, via_bot_id=None):
+        self.post = post
+        self.fwd_from = fwd_from
+        self.via_bot_id = via_bot_id
+
+
+def test_message_meta_reads_the_telethon_flags():
+    # Признаки формата были доступны на входе и просто выбрасывались.
+    assert not _message_meta(_FakeMessage(), _FakeUser()).is_broadcast
+    assert _message_meta(_FakeMessage(post=True), _FakeUser()).is_broadcast
+    assert _message_meta(_FakeMessage(fwd_from=object()), _FakeUser()).is_broadcast
+    assert _message_meta(_FakeMessage(via_bot_id=42), _FakeUser()).is_broadcast
+    # Написано от имени канала: username нет, писать «лиду» некуда.
+    assert _message_meta(_FakeMessage(), _FakeChannel()).is_broadcast
 
 
 def test_same_message_processed_twice_is_a_no_op(tmp_path):
